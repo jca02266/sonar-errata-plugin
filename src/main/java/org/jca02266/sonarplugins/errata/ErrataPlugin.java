@@ -2,6 +2,7 @@ package org.jca02266.sonarplugins.errata;
 
 import org.jca02266.sonarplugins.errata.rules.CreateIssuesOnTextFilesSensor;
 import org.jca02266.sonarplugins.errata.rules.TextRulesDefinition;
+import org.jca02266.sonarplugins.errata.settings.ErrataProperties;
 import org.sonar.api.Plugin;
 
 /**
@@ -12,5 +13,6 @@ public class ErrataPlugin implements Plugin {
   @Override
   public void define(Context context) {
     context.addExtensions(TextRulesDefinition.class, CreateIssuesOnTextFilesSensor.class);
+    context.addExtensions(ErrataProperties.getProperties());
   }
 }
