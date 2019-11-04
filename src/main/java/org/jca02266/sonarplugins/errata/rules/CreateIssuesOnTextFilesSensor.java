@@ -1,5 +1,7 @@
 package org.jca02266.sonarplugins.errata.rules;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
@@ -29,12 +31,10 @@ public class CreateIssuesOnTextFilesSensor implements Sensor {
   protected final Configuration config;
 
   public CreateIssuesOnTextFilesSensor(final Configuration config) {
-    LOGGER.info("errata sensor constructor called");
     this.config = config;
   }
   @Override
   public void describe(SensorDescriptor descriptor) {
-    LOGGER.info("errata sensor describe() called");
     descriptor.name("Check errata for text files");
 
     descriptor.onlyOnLanguage("java");
@@ -59,33 +59,39 @@ public class CreateIssuesOnTextFilesSensor implements Sensor {
 
   @Override
   public void execute(SensorContext context) {
-    LOGGER.info("errata sensor execute() called");
-
-    LOGGER.info("errata text: {}", config.get("errata.text").orElse("default"));
-    Arrays.stream(config.getStringArray("errata.text2")).forEach(val -> LOGGER.info("errata text2: {}", val));
+    List<Pair<PatternSearcher, String>> pairs = Arrays.stream(config.getStringArray("errata.table")).map(s -> {
+        String[] strs = s.split("->", 2);
+        LOGGER.info("errata wrong word: {}, right word: {}", strs[0], strs[1]);
+        if (strs.length != 2) {
+          throw new RuntimeException(String.format("invalid format on errata.table. it must be \" key -> val , ...\": \"%s\"", s));
+        }
+        return new Pair<PatternSearcher, String>(new PatternSearcher(Pattern.compile(strs[0].trim())), strs[1].trim());
+      })
+      .collect(Collectors.toList());
 
     FileSystem fs = context.fileSystem();
     FilePredicate fp = addExtensions(fs.predicates());
     Iterable<InputFile> textFiles = fs.inputFiles(fp);
 
     for (InputFile textFile : textFiles) {
-      InputStream is;
       try {
-        is = textFile.inputStream();
+        InputStream is = textFile.inputStream();
+        byte[] bytes = getBytes(is);
+
+        Charset cs = textFile.charset();
+
+        for (Pair<PatternSearcher, String> pair: pairs) {
+          pair.getFirst().search(new ByteArrayInputStream(bytes), cs, linenum -> start -> end ->
+            registerIssue(context, textFile, linenum, start, end, pair.getSecond())
+          );
+        }
       } catch (IOException e) {
         throw new RuntimeException("failed to inputStream()", e);
       }
-
-      Charset cs = textFile.charset();
-      Pattern pat = Pattern.compile("タイポ");
-
-      new PatternSearcher(pat).search(is, cs, linenum -> start -> end ->
-        registerIssue(context, textFile, linenum, start, end)
-      );
     }
   }
 
-  private void registerIssue(SensorContext context, InputFile textFile, int line, int start, int end) {
+  private void registerIssue(SensorContext context, InputFile textFile, int line, int start, int end, String rightWord) {
     NewIssue newIssue = context.newIssue()
       .forRule(TextRulesDefinition.RULE)
       .gap(ARBITRARY_GAP);
@@ -93,9 +99,31 @@ public class CreateIssuesOnTextFilesSensor implements Sensor {
     NewIssueLocation primaryLocation = newIssue.newLocation()
       .on(textFile)
       .at(textFile.newRange(textFile.newPointer(line, start), textFile.newPointer(line, end)))
-      .message("Fix typo");
+      .message("May be typo: " + rightWord);
     newIssue.at(primaryLocation);
 
     newIssue.save();
+  }
+
+  static class Pair<T,U> {
+    T first;
+    U second;
+    Pair(T first, U second) {
+      this.first = first;
+      this.second = second;
+    }
+    public T getFirst() { return first; }
+    public U getSecond() { return second; }
+  }
+
+  public static byte[] getBytes(InputStream is) throws IOException {
+    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    byte[] bytes = new byte[512];
+
+    for (int len = is.read(bytes); len != -1; len = is.read(bytes)) {
+      baos.write(bytes, 0, len);
+    }
+
+    return baos.toByteArray();
   }
 }
