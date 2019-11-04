@@ -1,5 +1,10 @@
 package org.jca02266.sonarplugins.errata.rules;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.Charset;
+import java.util.regex.Pattern;
+
 import org.sonar.api.batch.fs.FileSystem;
 import org.sonar.api.batch.fs.InputFile;
 import org.sonar.api.batch.sensor.Sensor;
@@ -25,18 +30,33 @@ public class CreateIssuesOnTextFilesSensor implements Sensor {
     FileSystem fs = context.fileSystem();
     Iterable<InputFile> textFiles = fs.inputFiles(fs.predicates().all());
     for (InputFile textFile : textFiles) {
-      NewIssue newIssue = context.newIssue()
-        .forRule(TextRulesDefinition.RULE)
-        .gap(ARBITRARY_GAP);
+      InputStream is;
+      try {
+        is = textFile.inputStream();
+      } catch (IOException e) {
+        throw new RuntimeException("failed to inputStream()", e);
+      }
 
-      NewIssueLocation primaryLocation = newIssue.newLocation()
-        .on(textFile)
-        .at(textFile.selectLine(1))
-        // .at(textFile.newRange(textFile.newPointer(1, 10), textFile.newPointer(2,5)))
-        .message("Fix typo");
-      newIssue.at(primaryLocation);
+      Charset cs = textFile.charset();
+      Pattern pat = Pattern.compile("タイポ");
 
-      newIssue.save();
+      new PatternSearcher(pat).search(is, cs, linenum -> start -> end ->
+        registerIssue(context, textFile, linenum, start, end)
+      );
     }
+  }
+
+  private void registerIssue(SensorContext context, InputFile textFile, int line, int start, int end) {
+    NewIssue newIssue = context.newIssue()
+      .forRule(TextRulesDefinition.RULE)
+      .gap(ARBITRARY_GAP);
+
+    NewIssueLocation primaryLocation = newIssue.newLocation()
+      .on(textFile)
+      .at(textFile.newRange(textFile.newPointer(line, start), textFile.newPointer(line, end)))
+      .message("Fix typo");
+    newIssue.at(primaryLocation);
+
+    newIssue.save();
   }
 }
