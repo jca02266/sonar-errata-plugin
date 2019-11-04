@@ -4,7 +4,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.util.Arrays;
+import java.util.List;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import org.sonar.api.batch.fs.FilePredicate;
 import org.sonar.api.batch.fs.FilePredicates;
@@ -40,8 +42,19 @@ public class CreateIssuesOnTextFilesSensor implements Sensor {
   }
 
   private FilePredicate addExtensions(FilePredicates fps) {
-    return fps.or(fps.hasExtension("txt"),
-                  fps.hasExtension("java"));
+    String[] suffixes = config.getStringArray("errata.file.suffixes");
+    List<FilePredicate> suffixPredicateList = Arrays.stream(suffixes).map(s -> {
+        // remove "." at first
+        if (s.startsWith(".")) {
+          return s.substring(1);
+        } else {
+          return s;
+        }
+      })
+      .map(s -> fps.hasExtension(s))
+      .collect(Collectors.toList());
+
+    return fps.or(suffixPredicateList);
   }
 
   @Override
