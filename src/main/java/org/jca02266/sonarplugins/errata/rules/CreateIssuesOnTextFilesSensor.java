@@ -6,6 +6,8 @@ import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.regex.Pattern;
 
+import org.sonar.api.batch.fs.FilePredicate;
+import org.sonar.api.batch.fs.FilePredicates;
 import org.sonar.api.batch.fs.FileSystem;
 import org.sonar.api.batch.fs.InputFile;
 import org.sonar.api.batch.sensor.Sensor;
@@ -37,6 +39,11 @@ public class CreateIssuesOnTextFilesSensor implements Sensor {
     descriptor.createIssuesForRuleRepositories(TextRulesDefinition.REPOSITORY);
   }
 
+  private FilePredicate addExtensions(FilePredicates fps) {
+    return fps.or(fps.hasExtension("txt"),
+                  fps.hasExtension("java"));
+  }
+
   @Override
   public void execute(SensorContext context) {
     LOGGER.info("errata sensor execute() called");
@@ -45,7 +52,9 @@ public class CreateIssuesOnTextFilesSensor implements Sensor {
     Arrays.stream(config.getStringArray("errata.text2")).forEach(val -> LOGGER.info("errata text2: {}", val));
 
     FileSystem fs = context.fileSystem();
-    Iterable<InputFile> textFiles = fs.inputFiles(fs.predicates().all());
+    FilePredicate fp = addExtensions(fs.predicates());
+    Iterable<InputFile> textFiles = fs.inputFiles(fp);
+
     for (InputFile textFile : textFiles) {
       InputStream is;
       try {
